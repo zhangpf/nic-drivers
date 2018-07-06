@@ -1,0 +1,22 @@
+[package]
+name = "ixgbe"
+version = "0.1.0"
+authors = ["Pengfei Zhang <zpfalpc23@gmail.com>"]
+
+
+# [[bin]]
+# name = "fwd"
+# path = "src/apps/fwd.rs"
+
+[[bin]]
+name = "pktgen"
+path = "src/apps/pktgen.rs"
+
+
+[lib]
+name = "ixgbe"
+path = "src/lib.rs"
+
+[dependencies]
+sysconf = "0.3.3"
+static_assertions = "0.2.5"
