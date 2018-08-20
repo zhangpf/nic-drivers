@@ -1,11 +1,11 @@
-use std::{process, ptr};
 use std::fs::OpenOptions;
-use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
-use std::io::{Seek, SeekFrom, Read};
+use std::io::{Read, Seek, SeekFrom};
 use std::os::unix::io::AsRawFd;
+use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
+use std::{process, ptr};
 
-use libc;
 use core::mem;
+use libc;
 use sysconf;
 
 use super::Buffer;
@@ -26,7 +26,7 @@ impl Mempool {
                 let mut free_stack = Vec::new();
                 let mut mempool = Mempool {
                     free_stack: Vec::new(),
-                    free_stack_top: num_entries as u32
+                    free_stack_top: num_entries as u32,
                 };
                 for i in 0..num_entries {
                     let buf = (virt as usize + (entry_size as usize * i as usize)) as *mut Buffer;
@@ -41,7 +41,10 @@ impl Mempool {
                 mempool.free_stack = free_stack;
                 mempool
             }
-            _ => panic!("entry size must be a divisor of the huge page size ({})", HUGE_PAGE_SIZE)
+            _ => panic!(
+                "entry size must be a divisor of the huge page size ({})",
+                HUGE_PAGE_SIZE
+            ),
         }
     }
 
@@ -49,10 +52,13 @@ impl Mempool {
         let mut ret = Vec::new();
         let upper_size = match self.free_stack_top < size {
             true => {
-                println!("memory pool {:p} only has {} free bufs, requested {}", &self, self.free_stack_top, size);
+                println!(
+                    "memory pool {:p} only has {} free bufs, requested {}",
+                    &self, self.free_stack_top, size
+                );
                 self.free_stack_top
-            },
-            false => size
+            }
+            false => size,
         };
         for _ in 0..upper_size {
             self.free_stack_top -= 1;
@@ -78,28 +84,34 @@ static HUGE_PAGE_ID: AtomicUsize = ATOMIC_USIZE_INIT;
 fn virt_to_phys(virt: *const u8) -> usize {
     const POINTER_SZ: usize = mem::size_of::<usize>();
     let page_size = sysconf::page::pagesize();
-    let mut file = OpenOptions::new().read(true)
-                    .open("/proc/self/pagemap")
-                    .expect("can't open the file: /proc/self/pagemap");
+    let mut file = OpenOptions::new()
+        .read(true)
+        .open("/proc/self/pagemap")
+        .expect("can't open the file: /proc/self/pagemap");
     // pagemap is an array of pointers for each normal-sized page
     let pos = virt as usize / page_size * POINTER_SZ;
-    file.seek(SeekFrom::Start(pos as u64)).expect("Seek failed!");
+    file.seek(SeekFrom::Start(pos as u64))
+        .expect("Seek failed!");
     let mut buf = [0u8; POINTER_SZ];
-    assert!(POINTER_SZ == file.read(&mut buf).expect("read failed!"),
-        format!("failed to translate virtual address {:p} to physical address", virt));
-    
+    assert!(
+        POINTER_SZ == file.read(&mut buf).expect("read failed!"),
+        format!(
+            "failed to translate virtual address {:p} to physical address",
+            virt
+        )
+    );
+
     // bits 0-54 are the page number
     unsafe {
-        // println!("{:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x}", virt as usize, mem::transmute::<_, usize>(buf),
-        //     buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]);
-        (mem::transmute::<_, usize>(buf) & 0x7fffffffffffffusize) * page_size + ((virt as usize) % page_size)
+        (mem::transmute::<_, usize>(buf) & 0x7fffffffffffffusize) * page_size
+            + ((virt as usize) % page_size)
     }
 }
 
 pub fn alloc_dma_memory(size: u32, require_contiguous: bool) -> (*const u8, usize) {
     let size_needed = match size % HUGE_PAGE_SIZE {
         0 => size,
-        _ => ((size >> HUGE_PAGE_BITS) + 1) << HUGE_PAGE_BITS
+        _ => ((size >> HUGE_PAGE_BITS) + 1) << HUGE_PAGE_BITS,
     };
 
     if require_contiguous && size_needed > HUGE_PAGE_SIZE {
@@ -108,7 +120,13 @@ pub fn alloc_dma_memory(size: u32, require_contiguous: bool) -> (*const u8, usiz
 
     let id = HUGE_PAGE_ID.fetch_add(1, Ordering::SeqCst);
     let path = format!("/mnt/huge/ixgbe-{}-{}", process::id(), id);
-    let file = OpenOptions::new().truncate(true).write(true).read(true).create(true)    .open(&path).expect(&format!("can't open the file: {}", path));
+    let file = OpenOptions::new()
+        .truncate(true)
+        .write(true)
+        .read(true)
+        .create(true)
+        .open(&path)
+        .expect(&format!("can't open the file: {}", path));
 
     let virt = unsafe {
         let addr = libc::mmap(
@@ -117,7 +135,7 @@ pub fn alloc_dma_memory(size: u32, require_contiguous: bool) -> (*const u8, usiz
             libc::PROT_READ | libc::PROT_WRITE,
             libc::MAP_SHARED | libc::MAP_HUGETLB,
             file.as_raw_fd(),
-            0
+            0,
         );
         libc::mlock(addr, size_needed as libc::size_t);
         libc::memset(addr, -1, size_needed as libc::size_t);
